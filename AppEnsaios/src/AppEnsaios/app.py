@@ -229,6 +229,16 @@ class TimeTrackerApp(toga.App):
 
         logs_window = toga.Window(title="Logs Salvos")
 
+        search_box = toga.Box(style=Pack(direction=ROW, padding=10))
+        search_input = toga.TextInput(placeholder="Buscar por data, token ou card JIRA", style=Pack(flex=1, padding=5))
+        search_button = toga.Button(
+            "Buscar",
+            on_press=lambda x: self.filter_logs(search_input.value, table),
+            style=Pack(padding=5)
+        )
+        search_box.add(search_input)
+        search_box.add(search_button)
+
         table = toga.Box(style=Pack(direction=COLUMN, padding=10))
 
         header_row = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#f0f0f0'))
@@ -251,13 +261,48 @@ class TimeTrackerApp(toga.App):
         )
 
         logs_layout = toga.Box(
-            children=[table, close_button],
+            children=[search_box, table, close_button],
             style=Pack(direction=COLUMN, padding=20)
         )
 
         logs_window.content = logs_layout
         self.windows.add(logs_window)
         logs_window.show()
+
+    def filter_logs(self, query, table):
+      """Filtra os logs com base na consulta."""
+      if not os.path.exists(self.log_file):
+          return
+  
+      with open(self.log_file, "r") as f:
+          logs = json.load(f)
+  
+      filtered_logs = [
+          log for log in logs
+          if query in log["data_finalizacao"]
+          or query in log["token"]
+          or query in log["card_jira"]
+      ]
+  
+      # Limpa o conteúdo atual da tabela recriando-a
+      for child in table.children[:]:
+          table.remove(child)
+  
+      # Adicionar cabeçalho novamente
+      header_row = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#f0f0f0'))
+      header_row.add(toga.Label("Data", style=Pack(width=150, padding=5, font_weight="bold")))
+      header_row.add(toga.Label("Token", style=Pack(width=200, padding=5, font_weight="bold")))
+      header_row.add(toga.Label("Card JIRA", style=Pack(width=150, padding=5, font_weight="bold")))
+      table.add(header_row)
+  
+      # Adicionar os logs filtrados
+      for log in filtered_logs:
+          row = toga.Box(style=Pack(direction=ROW, padding=5))
+          row.add(toga.Label(log["data_finalizacao"], style=Pack(width=150, padding=5)))
+          row.add(toga.Label(log["token"], style=Pack(width=200, padding=5)))
+          row.add(toga.Label(log["card_jira"], style=Pack(width=150, padding=5)))
+          table.add(row)
+
 
     def open_settings(self, widget):
         """Abre a janela de configurações para personalizar etapas e códigos."""
