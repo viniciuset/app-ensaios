@@ -218,6 +218,48 @@ class TimeTrackerApp(toga.App):
         self.jira_input.value = ""
         self.time_label.text = "Tempo total: 0 segundos"
 
+    def filter_logs(self, query, table):
+        """Filtra os logs com base na consulta."""
+        if not os.path.exists(self.log_file):
+            return
+
+        with open(self.log_file, "r") as f:
+            logs = json.load(f)
+
+        filtered_logs = [
+            log for log in logs
+            if query in log["data_finalizacao"]
+            or query in log["token"]
+            or query in log["card_jira"]
+        ]
+
+        # Limpa o conteúdo atual da tabela recriando-a
+        for child in table.children[:]:
+            table.remove(child)
+
+        # Adicionar cabeçalho novamente
+        header_row = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#f0f0f0'))
+        header_row.add(toga.Label("Data", style=Pack(width=150, padding=5, font_weight="bold")))
+        header_row.add(toga.Label("Token", style=Pack(width=200, padding=5, font_weight="bold")))
+        header_row.add(toga.Label("Card JIRA", style=Pack(width=150, padding=5, font_weight="bold")))
+        header_row.add(toga.Label("Editar", style=Pack(width=100, padding=5, font_weight="bold")))
+        table.add(header_row)
+
+        # Adicionar os logs filtrados
+        for log in filtered_logs:
+            row = toga.Box(style=Pack(direction=ROW, padding=5))
+            row.add(toga.Label(log["data_finalizacao"], style=Pack(width=150, padding=5)))
+            row.add(toga.Label(log["token"], style=Pack(width=200, padding=5)))
+            row.add(toga.Label(log["card_jira"], style=Pack(width=150, padding=5)))
+            edit_button = toga.Button(
+                "Editar",
+                on_press=lambda x, log=log: self.edit_log(log,table),
+                style=Pack(width=100, padding=5)
+            )
+            row.add(edit_button)
+            table.add(row)
+
+
     def view_logs(self, widget):
         """Abre uma janela para consultar os logs."""
         if not os.path.exists(self.log_file):
@@ -229,12 +271,23 @@ class TimeTrackerApp(toga.App):
 
         logs_window = toga.Window(title="Logs Salvos")
 
+        search_box = toga.Box(style=Pack(direction=ROW, padding=10))
+        search_input = toga.TextInput(placeholder="Buscar por data, token ou card JIRA", style=Pack(flex=1, padding=5))
+        search_button = toga.Button(
+            "Buscar",
+            on_press=lambda x: self.filter_logs(search_input.value, table),
+            style=Pack(padding=5)
+        )
+        search_box.add(search_input)
+        search_box.add(search_button)
+
         table = toga.Box(style=Pack(direction=COLUMN, padding=10))
 
         header_row = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#f0f0f0'))
         header_row.add(toga.Label("Data", style=Pack(width=150, padding=5, font_weight="bold")))
         header_row.add(toga.Label("Token", style=Pack(width=200, padding=5, font_weight="bold")))
         header_row.add(toga.Label("Card JIRA", style=Pack(width=150, padding=5, font_weight="bold")))
+        header_row.add(toga.Label("Editar", style=Pack(width=100, padding=5, font_weight="bold")))
         table.add(header_row)
 
         for log in logs:
@@ -242,6 +295,12 @@ class TimeTrackerApp(toga.App):
             row.add(toga.Label(log["data_finalizacao"], style=Pack(width=150, padding=5)))
             row.add(toga.Label(log["token"], style=Pack(width=200, padding=5)))
             row.add(toga.Label(log["card_jira"], style=Pack(width=150, padding=5)))
+            edit_button = toga.Button(
+                "Editar",
+                on_press=lambda x, log=log: self.edit_log(log,table),
+                style=Pack(width=100, padding=5)
+            )
+            row.add(edit_button)
             table.add(row)
 
         close_button = toga.Button(
@@ -251,7 +310,7 @@ class TimeTrackerApp(toga.App):
         )
 
         logs_layout = toga.Box(
-            children=[table, close_button],
+            children=[search_box, table, close_button],
             style=Pack(direction=COLUMN, padding=20)
         )
 
@@ -302,6 +361,36 @@ class TimeTrackerApp(toga.App):
         self.settings_window.content = settings_box
         self.settings_window.show()
 
+
+    def update_stage_buttons(self):
+        """Atualiza os botões das etapas na interface principal."""
+        # Obter o container de botões
+        button_box = self.main_window.content.children[2]  # Obtém o container dos botões
+
+        # Identificar os botões existentes de "Finalizar" e "Consultar Logs"
+        finish_button = next((child for child in button_box.children if getattr(child, "text", "") == "Finalizar"), None)
+        logs_button = next((child for child in button_box.children if getattr(child, "text", "") == "Consultar Logs"), None)
+
+        # Limpar os botões relacionados às etapas
+        for child in list(button_box.children):
+            if isinstance(child, toga.Box) and child not in [finish_button, logs_button]:
+                button_box.remove(child)
+
+        # Reconstruir os botões das etapas
+        row = None
+        for i, (stage_name, stage_data) in enumerate(self.stages.items()):
+            button = toga.Button(
+                stage_data["nome"],
+                style=Pack(flex=1, padding=5),
+                on_press=self.handle_stage,
+                id=stage_name
+            )
+            self.buttons[stage_name] = button
+            if i % 2 == 0:
+                row = toga.Box(style=Pack(direction=ROW, padding=5))
+                button_box.insert(-2, row)  # Insere antes dos dois últimos botões fixos
+            row.add(button)
+
     def save_settings(self, widget):
         """Salva as configurações personalizadas."""
         for stage, inputs in self.settings_inputs.items():
@@ -310,9 +399,118 @@ class TimeTrackerApp(toga.App):
 
         # Salvar no arquivo JSON
         with open(self.settings_file, "w") as f:
-            json.dump(self.stages, f)
+            json.dump(self.stages, f, indent=4)
+
+        # Atualizar os botões na interface principal
+        self.update_stage_buttons()
 
         self.settings_window.close()
+        self.main_window.info_dialog("Sucesso", "Configurações salvas com sucesso!")
+
+    def edit_log(self, log, table):
+        """Abre uma janela para editar os detalhes de um log."""
+        edit_window = toga.Window(title="Editar Log")
+
+        form = toga.Box(style=Pack(direction=COLUMN, padding=10))
+
+        # Campo para editar o nome do card JIRA
+        jira_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        jira_label = toga.Label("Card JIRA:", style=Pack(padding=5))
+        jira_input = toga.TextInput(value=log["card_jira"], style=Pack(flex=1, padding=5))
+        jira_box.add(jira_label)
+        jira_box.add(jira_input)
+
+        form.add(jira_box)
+
+        etapas_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
+        etapas_box.add(toga.Label("Editar Etapas", style=Pack(padding=5, font_weight="bold")))
+
+        etapa_inputs = []
+        for etapa in log["etapas"]:
+            row = toga.Box(style=Pack(direction=ROW, padding=5))
+            nome_input = toga.TextInput(value=etapa["etapa"], style=Pack(flex=1, padding=5))
+            codigo_input = toga.TextInput(value=etapa["codigo"], style=Pack(flex=1, padding=5))
+            tempo_input = toga.TextInput(value=str(etapa["tempo"]), style=Pack(flex=1, padding=5))
+            etapa_inputs.append({"nome": nome_input, "codigo": codigo_input, "tempo": tempo_input})
+            row.add(nome_input)
+            row.add(codigo_input)
+            row.add(tempo_input)
+            etapas_box.add(row)
+
+        save_button = toga.Button(
+            "Salvar Alterações",
+            on_press=lambda x: self.save_edited_log(log, etapa_inputs, jira_input, edit_window, table),
+            style=Pack(padding=10, alignment=CENTER)
+        )
+
+        form.add(etapas_box)
+        form.add(save_button)
+
+        edit_window.content = form
+        self.windows.add(edit_window)
+        edit_window.show()
+
+    def update_table(self, table, logs):
+        """Atualiza a tabela com os dados mais recentes."""
+        # Limpa o conteúdo atual da tabela
+        for child in table.children[:]:
+            table.remove(child)
+
+        # Adiciona cabeçalho
+        header_row = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#f0f0f0'))
+        header_row.add(toga.Label("Data", style=Pack(width=150, padding=5, font_weight="bold")))
+        header_row.add(toga.Label("Token", style=Pack(width=200, padding=5, font_weight="bold")))
+        header_row.add(toga.Label("Card JIRA", style=Pack(width=150, padding=5, font_weight="bold")))
+        header_row.add(toga.Label("Editar", style=Pack(width=100, padding=5, font_weight="bold")))
+        table.add(header_row)
+
+        # Adiciona os logs atualizados
+        for log in logs:
+            row = toga.Box(style=Pack(direction=ROW, padding=5))
+            row.add(toga.Label(log["data_finalizacao"], style=Pack(width=150, padding=5)))
+            row.add(toga.Label(log["token"], style=Pack(width=200, padding=5)))
+            row.add(toga.Label(log["card_jira"], style=Pack(width=150, padding=5)))
+            edit_button = toga.Button(
+                "Editar",
+                on_press=lambda x, log=log: self.edit_log(log, table),
+                style=Pack(width=100, padding=5)
+            )
+            row.add(edit_button)
+            table.add(row)
+
+    def save_edited_log(self, log, etapa_inputs, jira_input, edit_window, table):
+        """Salva as alterações feitas em um log e atualiza a tabela."""
+        # Atualizar o nome do card JIRA
+        log["card_jira"] = jira_input.value.strip()
+
+        # Atualizar os dados do log com os inputs
+        for etapa, inputs in zip(log["etapas"], etapa_inputs):
+            etapa["etapa"] = inputs["nome"].value
+            etapa["codigo"] = inputs["codigo"].value
+            try:
+                etapa["tempo"] = int(inputs["tempo"].value)
+            except ValueError:
+                etapa["tempo"] = 0
+
+        # Carregar todos os logs
+        with open(self.log_file, "r") as f:
+            logs = json.load(f)
+
+        # Encontrar o log pelo token e atualizá-lo
+        for existing_log in logs:
+            if existing_log["token"] == log["token"]:
+                existing_log.update(log)
+                break
+
+        # Salvar os logs atualizados
+        with open(self.log_file, "w") as f:
+            json.dump(logs, f, indent=4)
+
+        # Atualizar a tabela na interface
+        self.update_table(table, logs)
+
+        edit_window.close()
+        self.main_window.info_dialog("Sucesso", "Log atualizado com sucesso!")
 
 def main():
     return TimeTrackerApp("Time Tracker", "com.viniciustorres.timetracker")
