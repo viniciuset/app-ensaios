@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
-  packages: read
+  contents: write
+  packages: write
 
 defaults:
   run:
