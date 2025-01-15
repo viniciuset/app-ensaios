@@ -181,4 +181,3 @@ requires = [
     "toga-web~=0.4.7",
 ]
 style_framework = "Shoelace v2.3"
-
