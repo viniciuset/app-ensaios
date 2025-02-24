@@ -359,7 +359,6 @@ class TimeTrackerApp(toga.App):
         """Salva as edições feitas nos detalhes do log e remove linhas vazias."""
         with open(self.log_file, "r") as f:
             logs = json.load(f)
-
         # Encontrar o log correto pelo token
         for log in logs:
             if log["token"] == self.current_token:
