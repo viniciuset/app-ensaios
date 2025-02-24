@@ -165,6 +165,10 @@ requires = [
     "toga-android~=0.4.7",
 ]
 
+# Garante que a atividade principal está corretamente configurada
+package = "com.viniciustorres.AppEnsaios"
+activity = "org.beeware.android.MainActivity"
+
 base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
 
 build_gradle_dependencies = [
