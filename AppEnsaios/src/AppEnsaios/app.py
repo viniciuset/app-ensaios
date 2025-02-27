@@ -307,13 +307,13 @@ class TimeTrackerApp(toga.App):
         # 🔹 Ordenar os logs pelo horário de início antes de exibir
         log["etapas"].sort(key=lambda x: datetime.strptime(x["inicio"], "%H:%M:%S"))
 
-        # 🔹 Cabeçalho da edição
+        # 🔹 Cabeçalho da edição com largura flexível
         header = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#dcdcdc'))
-        header.add(toga.Label("Etapa", style=Pack(width=100, padding=5, font_weight="bold")))
-        header.add(toga.Label("Código", style=Pack(width=80, padding=5, font_weight="bold")))
-        header.add(toga.Label("Início", style=Pack(width=120, padding=5, font_weight="bold")))
-        header.add(toga.Label("Fim", style=Pack(width=120, padding=5, font_weight="bold")))
-        header.add(toga.Label("Tempo (seg)", style=Pack(width=80, padding=5, font_weight="bold")))
+        header.add(toga.Label("Etapa", style=Pack(flex=1, padding=5, font_weight="bold")))
+        header.add(toga.Label("Código", style=Pack(flex=1, padding=5, font_weight="bold")))
+        header.add(toga.Label("Início", style=Pack(flex=2, padding=5, font_weight="bold")))  # Mais espaço para inputs
+        header.add(toga.Label("Fim", style=Pack(flex=2, padding=5, font_weight="bold")))  # Mais espaço para inputs
+        header.add(toga.Label("Tempo (seg)", style=Pack(flex=1, padding=5, font_weight="bold")))
         self.details_box.add(header)
 
         # 🔹 Criar campos editáveis para cada entrada individual
@@ -321,11 +321,11 @@ class TimeTrackerApp(toga.App):
         for etapa in log["etapas"]:
             row = toga.Box(style=Pack(direction=ROW, padding=5))
 
-            etapa_label = toga.Label(etapa["etapa"], style=Pack(width=100, padding=5))
-            codigo_label = toga.Label(etapa["codigo"], style=Pack(width=80, padding=5))
-            inicio_input = toga.TextInput(value=etapa["inicio"], style=Pack(width=120, padding=5))
-            fim_input = toga.TextInput(value=etapa["fim"], style=Pack(width=120, padding=5))
-            tempo_label = toga.Label(str(round(etapa["tempo"], 2)), style=Pack(width=80, padding=5))
+            etapa_label = toga.Label(etapa["etapa"], style=Pack(flex=1, padding=5))
+            codigo_label = toga.Label(etapa["codigo"], style=Pack(flex=1, padding=5))
+            inicio_input = toga.TextInput(value=etapa["inicio"], style=Pack(flex=2, padding=5))
+            fim_input = toga.TextInput(value=etapa["fim"], style=Pack(flex=2, padding=5))
+            tempo_label = toga.Label(str(round(etapa["tempo"], 2)), style=Pack(flex=1, padding=5))
 
             # Guardar inputs para edição
             self.edit_inputs.append({
@@ -351,7 +351,7 @@ class TimeTrackerApp(toga.App):
         save_button = toga.Button(
             "Salvar Alterações",
             on_press=lambda x: self.save_edited_log(),
-            style=Pack(padding=10, background_color="#4CAF50", color="white")
+            style=Pack(padding=10, background_color="#4CAF50", color="white", flex=1)
         )
         self.details_box.add(save_button)
 
@@ -413,7 +413,7 @@ class TimeTrackerApp(toga.App):
                 with open(self.log_file, "w") as f:
                     json.dump([], f, indent=4)
 
-            # Verifica se `results_box` e `details_box` existem antes de tentar limpá-los
+            # Verifica se results_box e details_box existem antes de tentar limpá-los
             if hasattr(self, "results_box") and self.results_box:
                 for child in self.results_box.children[:]:
                     self.results_box.remove(child)
