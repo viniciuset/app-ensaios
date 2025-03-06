@@ -2,7 +2,7 @@
 [tool.briefcase]
 project_name = "App Ensaios - Controle de tempo"
 bundle = "com.viniciustorres"
-version = "0.0.1"
+version = "1.0.0"
 url = "https://viniciustorres.com/AppEnsaios"
 license.file = "LICENSE"
 author = "Vinicius Torres"
@@ -11,6 +11,7 @@ author_email = "vinicius.torres@xmobots.com.br"
 [tool.briefcase.app.AppEnsaios]
 formal_name = "APP Ensaios"
 description = "App para controle de tempo do time de ensaios em voo."
+icon = "src/AppEnsaios/resources/relogio-de-aviao"
 long_description = """More details about the app should go here.
 """
 sources = [
@@ -164,6 +165,9 @@ requires = [
 requires = [
     "toga-android~=0.4.7",
 ]
+# Definir versão mínima e máxima do Android
+min_sdk_version = 31  # Android 12
+target_sdk_version = 34  # Android 14
 
 # Garante que a atividade principal está corretamente configurada
 package = "com.viniciustorres.AppEnsaios"

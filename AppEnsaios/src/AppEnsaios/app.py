@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 import uuid
 import functools
+import math
 
 class TimeTrackerApp(toga.App):
     def startup(self):
@@ -17,16 +18,16 @@ class TimeTrackerApp(toga.App):
         self.settings_file = os.path.join(self.log_folder, "settings.json")
         self.log_file = os.path.join(self.log_folder, "tracking_logs.json")
 
-        # 🔹 Resetar todos os tempos na inicialização
+        # Resetar todos os tempos na inicialização
         self.current_stage = None
         self.start_time = None
 
-        # 🔹 Criar um arquivo de logs vazio se ele não existir
+        # Criar um arquivo de logs vazio se ele não existir
         if not os.path.exists(self.log_file):
             with open(self.log_file, "w") as f:
                 json.dump([], f, indent=4)
 
-        # 🔹 Resetar tempos e horários das etapas
+        # Resetar tempos e horários das etapas
         self.load_stages()
         for stage in self.stages.values():
             stage["tempos"] = []
@@ -51,16 +52,20 @@ class TimeTrackerApp(toga.App):
 
 
     def load_stages(self):
+        """Carrega as etapas e o número de botões da configuração."""
         if os.path.exists(self.settings_file):
             with open(self.settings_file, "r") as f:
-                self.stages = json.load(f)
+                settings = json.load(f)
+                self.num_buttons = settings.get("num_buttons", 8)  # 🔹 Valor padrão: 8 botões
+                self.stages = settings.get("stages", {})
         else:
+            self.num_buttons = 8  # 🔹 Valor padrão inicial
             self.stages = {
                 f"Etapa {i+1}": {"nome": f"Etapa {i+1}", "codigo": f"{i+1:04}", "tempos": []}
-                for i in range(8)
+                for i in range(self.num_buttons)
             }
-            with open(self.settings_file, "w") as f:
-                json.dump(self.stages, f)
+            self.save_settings()
+
 
     def create_static_layout_top(self):
         jira_label = toga.Label("Card JIRA:", style=Pack(padding=5))
@@ -72,75 +77,148 @@ class TimeTrackerApp(toga.App):
         )
     
     def create_static_layout_bot(self):
-        self.time_label = toga.Label("Tempo total: 0 segundos", style=Pack(padding=10))
-        finish_button = toga.Button("Finalizar", on_press=self.finish_tracking, style=Pack(padding=10))
-        logs_button = toga.Button("Consultar Logs", on_press=self.view_logs, style=Pack(padding=10))
+        """Cria o layout inferior da interface"""
+        self.finish_button = toga.Button("Finalizar", on_press=self.finish_tracking, style=Pack(padding=10))
+        self.logs_button = toga.Button("Consultar Logs", on_press=self.view_logs, style=Pack(padding=10))
+
         return toga.Box(
-            children=[self.time_label, finish_button, logs_button],
+            children=[self.finish_button, self.logs_button],
             style=Pack(direction=COLUMN, padding=10)
         )
 
     def create_dynamic_buttons(self):
+        """Cria dinamicamente os botões de etapa conforme o número configurado."""
         button_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
         self.buttons = {}
-        for i, (stage_name, stage_data) in enumerate(self.stages.items()):
+
+        for i in range(self.num_buttons):  # 🔹 Usa o número de botões configurado
+            stage_name = f"Etapa {i+1}"
+            if stage_name not in self.stages:
+                self.stages[stage_name] = {"nome": stage_name, "codigo": f"{i+1:04}", "tempos": []}
+
             button = toga.Button(
-                stage_data["nome"],
+                self.stages[stage_name]["nome"],
                 on_press=self.handle_stage,
                 id=stage_name,
                 style=Pack(flex=1, padding=5)
             )
             self.buttons[stage_name] = button
+
             if i % 2 == 0:
                 row = toga.Box(style=Pack(direction=ROW, padding=5))
                 button_box.add(row)
             row.add(button)
+
         return button_box
+    
+    def update_button_list(self):
+        """Atualiza a lista de etapas conforme o número de botões escolhido."""
+        new_stages = {}
+
+        for i in range(self.num_buttons):
+            stage_name = f"Etapa {i+1}"
+            if stage_name in self.stages:
+                new_stages[stage_name] = self.stages[stage_name]  # Mantém configurações antigas
+            else:
+                new_stages[stage_name] = {"nome": stage_name, "codigo": f"{i+1:04}", "tempos": []}  # Cria novas etapas
+
+        self.stages = new_stages  # Atualiza o dicionário de etapas
 
 
     def open_settings(self, widget):
-        """Abre a janela de configurações com opção de zerar logs."""
-        settings_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
+        """Abre a janela de configurações com opção de alterar o número de botões e zerar logs."""
+        scroll_content = toga.Box(style=Pack(direction=COLUMN, padding=10))  # 🔹 Criamos um box rolável
 
+        # 🔹 Seção para escolher o número de botões
+        button_count_box = toga.Box(style=Pack(direction=ROW, padding=10))
+        button_count_label = toga.Label(f"Quantidade de botões: {self.num_buttons}", style=Pack(padding=5))
+
+        def decrease_buttons(widget):
+            if self.num_buttons > 1:
+                self.num_buttons -= 1
+                button_count_label.text = f"Quantidade de botões: {self.num_buttons}"
+
+        def increase_buttons(widget):
+            if self.num_buttons < 20:
+                self.num_buttons += 1
+                button_count_label.text = f"Quantidade de botões: {self.num_buttons}"
+
+        def generate_buttons(widget):
+            """Atualiza a lista de botões dinamicamente na tela de configurações."""
+            self.update_button_list()
+            self.open_settings(widget)  # 🔹 Reabre a tela de configurações com os novos valores
+
+        minus_button = toga.Button("-", on_press=decrease_buttons, style=Pack(padding=5))
+        plus_button = toga.Button("+", on_press=increase_buttons, style=Pack(padding=5))
+        generate_button = toga.Button("Gerar", on_press=generate_buttons, style=Pack(padding=5))
+
+        button_count_box.add(minus_button)
+        button_count_box.add(button_count_label)
+        button_count_box.add(plus_button)
+        button_count_box.add(generate_button)
+        
+        scroll_content.add(button_count_box)
+
+        # 🔹 Criar uma caixa rolável para os botões configuráveis
         self.settings_inputs = {}
-        for stage, data in self.stages.items():
+
+        for i in range(self.num_buttons):
+            stage_name = f"Etapa {i+1}"
+            if stage_name not in self.stages:
+                self.stages[stage_name] = {"nome": stage_name, "codigo": f"{i+1:04}", "tempos": []}
+
             row = toga.Box(style=Pack(direction=ROW, padding=5))
-            name_input = toga.TextInput(value=data['nome'], style=Pack(flex=1, padding=5))
-            code_input = toga.TextInput(value=data['codigo'], style=Pack(flex=1, padding=5))
-            self.settings_inputs[stage] = {'nome': name_input, 'codigo': code_input}
-            row.add(toga.Label(stage, style=Pack(padding=5)))
+
+            name_input = toga.TextInput(value=self.stages[stage_name]["nome"], style=Pack(flex=1, padding=5))
+            code_input = toga.TextInput(value=self.stages[stage_name]["codigo"], style=Pack(flex=1, padding=5))
+
+            self.settings_inputs[stage_name] = {'nome': name_input, 'codigo': code_input}
+
+            row.add(toga.Label(stage_name, style=Pack(padding=5)))
             row.add(name_input)
             row.add(code_input)
-            settings_box.add(row)
+            scroll_content.add(row)
 
+        # 🔹 Botões para salvar ou voltar
         save_button = toga.Button("Salvar", on_press=self.save_settings, style=Pack(padding=10))
         reset_logs_button = toga.Button("Zerar Logs", on_press=self.clear_logs, style=Pack(padding=10, background_color="#f44336", color="white"))
         back_button = toga.Button("Voltar", on_press=self.return_to_main, style=Pack(padding=10))
 
-        settings_box.add(save_button)
-        settings_box.add(reset_logs_button)
-        settings_box.add(back_button)
+        scroll_content.add(save_button)
+        scroll_content.add(reset_logs_button)
+        scroll_content.add(back_button)
 
-        self.main_window.content = settings_box
+        # 🔹 Envolver tudo no ScrollContainer
+        self.main_window.content = toga.ScrollContainer(content=scroll_content)
 
 
-    def save_settings(self, widget):
+    def save_settings(self, widget=None):
+        """Salva as configurações, incluindo o número de botões e nomes das etapas."""
         for stage, inputs in self.settings_inputs.items():
             self.stages[stage]['nome'] = inputs['nome'].value
             self.stages[stage]['codigo'] = inputs['codigo'].value
+
+        settings_data = {
+            "num_buttons": self.num_buttons,  # 🔹 Salva o número de botões
+            "stages": self.stages
+        }
+
         with open(self.settings_file, "w") as f:
-            json.dump(self.stages, f, indent=4)
+            json.dump(settings_data, f, indent=4)
+
         self.return_to_main(widget)
 
+
     def return_to_main(self, widget):
-        self.dynamic_content = self.create_dynamic_buttons()
+        """Volta para a tela principal e atualiza os botões conforme a configuração."""
+        self.dynamic_content = self.create_dynamic_buttons()  # 🔹 Recria os botões
         self.main_window.content = toga.Box(
-            children=[self.main_content_top, self.dynamic_content,self.main_content_bot],
+            children=[self.main_content_top, self.dynamic_content, self.main_content_bot],
             style=Pack(direction=COLUMN)
         )
 
     def view_logs(self, widget):
-        """Exibe a interface de consulta de logs, verificando se o JSON é válido."""
+        """Exibe a interface de consulta de logs, garantindo que os detalhes apareçam logo abaixo do item selecionado."""
         if not os.path.exists(self.log_file):
             self.main_window.info_dialog("Logs", "Nenhum log encontrado.")
             return
@@ -149,53 +227,44 @@ class TimeTrackerApp(toga.App):
             with open(self.log_file, "r") as f:
                 self.logs = json.load(f)
 
-            # Se o JSON estiver vazio ou incorreto, inicializa como uma lista vazia
             if not isinstance(self.logs, list):
                 self.logs = []
         except (json.JSONDecodeError, ValueError):
-            # Se houver erro, recria o arquivo JSON vazio
             with open(self.log_file, "w") as f:
                 json.dump([], f, indent=4)
 
             self.logs = []
             self.main_window.info_dialog("Erro nos Logs", "O arquivo de logs estava corrompido e foi resetado.")
 
-        # Se não houver logs após reset, avisa o usuário
-        if not self.logs:
-            self.main_window.info_dialog("Logs", "Nenhum log encontrado.")
-            return
+        # 🔹 Container principal
+        main_container = toga.Box(style=Pack(direction=COLUMN, flex=1, padding=10))
 
-        self.logs_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
-
+        # 🔹 Campo de busca
+        search_box = toga.Box(style=Pack(direction=ROW, padding=10))
         self.search_input = toga.TextInput(
             placeholder="Buscar por data, token ou card JIRA",
             style=Pack(flex=1, padding=5)
         )
-        search_button = toga.Button(
-            "Buscar",
-            on_press=self.search_logs,
-            style=Pack(padding=5)
-        )
-        back_button = toga.Button(
-            "Voltar",
-            on_press=self.return_to_main,
-            style=Pack(padding=10)
-        )
+        search_button = toga.Button("Buscar", on_press=lambda widget: self.search_logs(widget) or self.prevent_scroll_on_click(), style=Pack(padding=5))
+        search_box.add(self.search_input)
+        search_box.add(search_button)
 
-        self.logs_box.add(self.search_input)
-        self.logs_box.add(search_button)
-        self.logs_box.add(back_button)
+        back_button = toga.Button("Voltar", on_press=lambda widget: self.return_to_main(widget) or self.prevent_scroll_on_click(), style=Pack(padding=10))
 
-        self.results_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
-        self.logs_box.add(self.results_box)
+        main_container.add(search_box)
+        main_container.add(back_button)
 
-        self.details_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
-        self.logs_box.add(self.details_box)
+        # 🔹 Container para resultados e detalhes
+        self.results_box = toga.Box(style=Pack(direction=COLUMN, flex=1, padding=10))
+        
+        # 🔹 Adicionamos a área de resultados ao layout
+        main_container.add(self.results_box)
 
-        self.main_window.content = self.logs_box
+        # 🔹 Envolve os resultados e detalhes dentro de um ScrollContainer
+        self.main_window.content = toga.ScrollContainer(content=main_container)
 
     def search_logs(self, widget):
-        """Filtra os logs de acordo com a busca e exibe os resultados."""
+        """Filtra os logs e exibe os resultados na tela, garantindo que os detalhes apareçam logo abaixo."""
         query = self.search_input.value.strip()
         if not query:
             return
@@ -205,27 +274,19 @@ class TimeTrackerApp(toga.App):
             if query in log["data_finalizacao"] or query in log["token"] or query in log["card_jira"]
         ]
 
-        # Limpa os resultados e os detalhes anteriores
         for child in self.results_box.children[:]:
             self.results_box.remove(child)
-        for child in self.details_box.children[:]:
-            self.details_box.remove(child)
 
         if not filtered_logs:
-            # Se nenhum resultado for encontrado, exibir mensagem
-            no_results_label = toga.Label(
-                "Nenhum resultado encontrado.",
-                style=Pack(padding=10, font_weight="bold", color="red")
-            )
-            self.results_box.add(no_results_label)
-            return  # Sai da função para não tentar exibir logs inexistentes
+            self.results_box.add(toga.Label("Nenhum resultado encontrado.", style=Pack(padding=10, color="red")))
+            return
 
         for log in filtered_logs:
             log_box = toga.Box(style=Pack(direction=COLUMN, padding=8, background_color="#f5f5f5"))
 
             log_button = toga.Button(
-                f"Data: {log['data_finalizacao']} | Card: {log['card_jira']}",
-                on_press=functools.partial(self.display_log_details, log),
+                f"DATA: {log['data_finalizacao']} | CARD: {log['card_jira']}",
+                on_press=functools.partial(self.display_log_details, log, log_box),
                 style=Pack(padding=5, font_weight="bold", color="blue", text_align="left")
             )
 
@@ -233,7 +294,7 @@ class TimeTrackerApp(toga.App):
             log_box.add(toga.Label("Clique para mais detalhes", style=Pack(padding=2, font_size=10, color="gray")))
 
             self.results_box.add(log_box)
-    
+
     def update_time(self, inicio_input, fim_input, tempo_label):
         """Recalcula automaticamente o tempo baseado no início e fim."""
         inicio = inicio_input.value.strip()
@@ -258,63 +319,73 @@ class TimeTrackerApp(toga.App):
         except ValueError:
             tempo_label.text = "0"  # Se der erro no formato, colocar como 0
 
+    def display_log_details(self, log, log_box, widget=None):
+        """Exibe os detalhes do log abaixo do item clicado. Se já estiver aberto, fecha."""
+        
+        # 🔹 Se o log já estiver aberto, remove ele ao clicar novamente
+        if hasattr(log_box, "details") and log_box.details:
+            log_box.remove(log_box.details)
+            log_box.details = None
+            self.current_token = None  # 🔹 Reseta o token ao fechar o detalhe
+            return
 
-    def display_log_details(self, log, widget=None):
-        """Mostra um resumo do log (etapa, código, tempo total) e permite entrar no modo de edição."""
-        self.current_token = log["token"]  # Salva o token do log atual
+        self.current_token = log["token"]  # 🔹 Armazena o token do log atual
 
-        # 🔹 Limpa a área antes de exibir novos dados
-        for child in self.details_box.children[:]:
-            self.details_box.remove(child)
+        details_container = toga.Box(style=Pack(direction=COLUMN, padding=10, background_color="#e0e0e0"))
 
-        # 🔹 Exibir cabeçalho
-        header = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#dcdcdc'))
-        header.add(toga.Label("Etapa", style=Pack(width=100, padding=5, font_weight="bold")))
-        header.add(toga.Label("Código", style=Pack(width=80, padding=5, font_weight="bold")))
-        header.add(toga.Label("Tempo (segundos)", style=Pack(width=80, padding=5, font_weight="bold")))
-        self.details_box.add(header)
+        details_container.add(toga.Label(f"Card JIRA: {log['card_jira']}", style=Pack(padding=5, font_weight="bold")))
+        details_container.add(toga.Label(f"Token: {log['token']}", style=Pack(padding=5)))
+        details_container.add(toga.Label(f"Data: {log['data_finalizacao']}", style=Pack(padding=5)))
 
-        # 🔹 Criar um dicionário para agrupar os tempos por etapa
-        etapas_resumidas = {}
+        header = toga.Box(style=Pack(direction=ROW, padding=5, background_color="#dcdcdc"))
+        header.add(toga.Label("Etapa", style=Pack(flex=1, padding=5, font_weight="bold")))
+        header.add(toga.Label("Código", style=Pack(flex=1, padding=5, font_weight="bold")))
+        header.add(toga.Label("Tempo", style=Pack(flex=1, padding=5, font_weight="bold")))
+        
+        details_container.add(header)
+
         for etapa in log["etapas"]:
-            chave = (etapa["etapa"], etapa["codigo"])
-            if chave not in etapas_resumidas:
-                etapas_resumidas[chave] = 0
-            etapas_resumidas[chave] += etapa["tempo"]
-
-        # 🔹 Exibir apenas o resumo na tela
-        for (etapa, codigo), tempo_total in etapas_resumidas.items():
             row = toga.Box(style=Pack(direction=ROW, padding=5))
-            row.add(toga.Label(etapa, style=Pack(width=100, padding=5)))
-            row.add(toga.Label(codigo, style=Pack(width=80, padding=5)))
-            row.add(toga.Label(str(round(tempo_total, 2)), style=Pack(width=80, padding=5)))
-            self.details_box.add(row)
+            row.add(toga.Label(etapa["etapa"], style=Pack(flex=1, padding=5)))
+            row.add(toga.Label(etapa["codigo"], style=Pack(flex=1, padding=5)))
 
-        # 🔹 Botão "Editar" para mostrar os detalhes completos
+            tempo_minutos = math.ceil(etapa["tempo"] / 60)
+            row.add(toga.Label(f"{tempo_minutos} minuto(s)", style=Pack(flex=1, padding=5)))
+
+            details_container.add(row)
+
         edit_button = toga.Button(
             "Editar",
-            on_press=lambda x: self.show_detailed_edit_view(log),
+            on_press=lambda widget: self.show_detailed_edit_view(log, details_container),
             style=Pack(padding=10, background_color="#FFC107", color="black")
         )
-        self.details_box.add(edit_button)
+        
+        details_container.add(edit_button)
 
-    def show_detailed_edit_view(self, log):
-        """Mostra todas as ocorrências individuais para edição em ordem cronológica."""
-        # 🔹 Limpa os detalhes antes de exibir os editáveis
-        for child in self.details_box.children[:]:
-            self.details_box.remove(child)
+        log_box.details = details_container  # Marca que o log já tem um detalhe aberto
+        log_box.add(details_container)
 
-        # 🔹 Ordenar os logs pelo horário de início antes de exibir
-        log["etapas"].sort(key=lambda x: datetime.strptime(x["inicio"], "%H:%M:%S"))
+    def show_detailed_edit_view(self, log, details_container):
+        """Mostra todas as ocorrências individuais para edição em ordem cronológica. Se já estiver aberta, fecha."""
 
-        # 🔹 Cabeçalho da edição com largura flexível
+        # 🔹 Se a edição já estiver aberta, fecha ao clicar novamente
+        if hasattr(details_container, "edit_box") and details_container.edit_box:
+            details_container.remove(details_container.edit_box)
+            details_container.edit_box = None
+            return
+
+        # 🔹 Criamos um container para os detalhes
+        edit_box = toga.Box(style=Pack(direction=COLUMN, padding=10))
+
+        # 🔹 Cabeçalho da edição
         header = toga.Box(style=Pack(direction=ROW, padding=5, background_color='#dcdcdc'))
         header.add(toga.Label("Etapa", style=Pack(flex=1, padding=5, font_weight="bold")))
         header.add(toga.Label("Código", style=Pack(flex=1, padding=5, font_weight="bold")))
-        header.add(toga.Label("Início", style=Pack(flex=2, padding=5, font_weight="bold")))  # Mais espaço para inputs
-        header.add(toga.Label("Fim", style=Pack(flex=2, padding=5, font_weight="bold")))  # Mais espaço para inputs
-        header.add(toga.Label("Tempo (seg)", style=Pack(flex=1, padding=5, font_weight="bold")))
-        self.details_box.add(header)
+        header.add(toga.Label("Início", style=Pack(flex=2, padding=5, font_weight="bold")))
+        header.add(toga.Label("Fim", style=Pack(flex=2, padding=5, font_weight="bold")))
+        header.add(toga.Label("Tempo (segundos)", style=Pack(flex=1, padding=5, font_weight="bold")))
+
+        edit_box.add(header)
 
         # 🔹 Criar campos editáveis para cada entrada individual
         self.edit_inputs = []
@@ -325,9 +396,11 @@ class TimeTrackerApp(toga.App):
             codigo_label = toga.Label(etapa["codigo"], style=Pack(flex=1, padding=5))
             inicio_input = toga.TextInput(value=etapa["inicio"], style=Pack(flex=2, padding=5))
             fim_input = toga.TextInput(value=etapa["fim"], style=Pack(flex=2, padding=5))
-            tempo_label = toga.Label(str(round(etapa["tempo"], 2)), style=Pack(flex=1, padding=5))
 
-            # Guardar inputs para edição
+            # 🔹 Mantemos o tempo em segundos para edição
+            tempo_label = toga.Label(f"{etapa['tempo']} segundo(s)", style=Pack(flex=1, padding=5))
+
+            # 🔹 Guarda os inputs para edição
             self.edit_inputs.append({
                 "etapa": etapa_label,
                 "codigo": codigo_label,
@@ -341,25 +414,47 @@ class TimeTrackerApp(toga.App):
             row.add(inicio_input)
             row.add(fim_input)
             row.add(tempo_label)
-            self.details_box.add(row)
+            edit_box.add(row)
 
-            # Atualizar tempo automaticamente ao alterar os valores de início e fim
+            # 🔹 Atualiza o tempo automaticamente ao alterar os valores de início e fim
             inicio_input.on_change = lambda widget: self.update_time(inicio_input, fim_input, tempo_label)
             fim_input.on_change = lambda widget: self.update_time(inicio_input, fim_input, tempo_label)
 
         # 🔹 Botão "Salvar Alterações"
         save_button = toga.Button(
             "Salvar Alterações",
-            on_press=lambda x: self.save_edited_log(),
+            ##on_press=lambda widget: self.save_edited_log(widget) or self.prevent_scroll_on_click(),
+            on_press=lambda widget: (self.save_edited_log(widget), self.prevent_scroll_on_click()),
             style=Pack(padding=10, background_color="#4CAF50", color="white", flex=1)
         )
-        self.details_box.add(save_button)
 
-    def save_edited_log(self):
+        edit_box.add(save_button)
+
+        # 🔹 Exibe os detalhes na tela abaixo do resumo do log
+        details_container.edit_box = edit_box  # Marca que a edição já foi aberta
+        details_container.add(edit_box)
+
+    def prevent_scroll_on_click(self):
+        """Mantém a posição de rolagem ao interagir com botões."""
+        try:
+            # Obtém a posição atual da rolagem
+            scroll_position = self.main_window.content.style.padding_top
+            # Define um pequeno atraso e restaura a posição após a ação
+            toga.App.set_timeout(0.1, lambda: setattr(self.main_window.content.style, "padding_top", scroll_position))
+        except AttributeError:
+            pass  # Se não for possível acessar, ignora o erro
+
+
+    def save_edited_log(self, widget):
         """Salva as edições feitas nos detalhes do log e remove linhas vazias."""
+        
+        if not hasattr(self, "current_token") or not self.current_token:
+            self.main_window.info_dialog("Erro", "Nenhum log foi selecionado para edição.")
+            return
+
         with open(self.log_file, "r") as f:
             logs = json.load(f)
-        # Encontrar o log correto pelo token
+
         for log in logs:
             if log["token"] == self.current_token:
                 novas_etapas = []
@@ -376,9 +471,8 @@ class TimeTrackerApp(toga.App):
                             if tempo_total < 0:
                                 tempo_total = 0
                         except ValueError:
-                            tempo_total = 0  # Se houver erro no formato, define como 0
+                            tempo_total = 0
 
-                        # Se os valores forem válidos, adiciona ao JSON
                         if inicio != "00:00:00" or fim != "00:00:00":
                             novas_etapas.append({
                                 "etapa": etapa["etapa"],
@@ -388,15 +482,13 @@ class TimeTrackerApp(toga.App):
                                 "tempo": tempo_total
                             })
 
-                # Atualiza o log com as novas etapas (removendo as que foram apagadas)
                 log["etapas"] = novas_etapas
 
-        # Salvar os logs editados no JSON
         with open(self.log_file, "w") as f:
             json.dump(logs, f, indent=4)
 
         self.main_window.info_dialog("Sucesso", "Log atualizado com sucesso!")
-
+        self.current_token = None  # 🔹 Reseta o token após salvar
 
     async def clear_logs(self, widget):
         """Solicita confirmação antes de apagar todos os logs."""
@@ -432,6 +524,14 @@ class TimeTrackerApp(toga.App):
         now = time.time()
         timestamp = datetime.now().strftime("%H:%M:%S")
 
+        # Desativar botões e configurações enquanto uma etapa está ativa
+        self.logs_button.enabled = False
+        self.finish_button.enabled = True
+
+        # Desativar o menu de configurações
+        for command in self.main_window.toolbar:
+            command.enabled = False  # 🔹 Desativa os comandos do menu
+
         # Se já havia uma etapa ativa, salva o tempo e o horário de fim
         if self.current_stage:
             elapsed = now - self.start_time
@@ -459,9 +559,13 @@ class TimeTrackerApp(toga.App):
         self.stages[self.current_stage]["hora_inicio"] = timestamp  # Registra o início da nova etapa
         widget.style.background_color = "lightblue"
 
+    def format_time(self, seconds):
+        """Converte segundos para minutos, sempre arredondando para cima."""
+        minutes = math.ceil(seconds / 60)  # 🔹 Sempre arredonda para cima
+        return f"{minutes} minuto(s)"
 
     def finish_tracking(self, widget):
-        """Finaliza a contagem de tempo e exibe o resumo (simplificado), mas salva o log completo."""
+        """Finaliza a contagem de tempo, salva os logs e reativa os botões e menus."""
         if self.current_stage:
             elapsed = time.time() - self.start_time
             self.stages[self.current_stage]["tempos"].append(elapsed)
@@ -476,6 +580,13 @@ class TimeTrackerApp(toga.App):
             })
 
             self.stages[self.current_stage]["hora_fim"] = datetime.now().strftime("%H:%M:%S")
+
+        # Reativar os botões e configurações
+        self.logs_button.enabled = True
+        self.finish_button.enabled = False
+
+        for command in self.main_window.toolbar:
+            command.enabled = True  # 🔹 Reativa os comandos do menu
 
         jira_card = self.jira_input.value.strip() or "SEM CARD JIRA"
         total_time = sum(sum(stage["tempos"]) for stage in self.stages.values())
@@ -501,7 +612,7 @@ class TimeTrackerApp(toga.App):
                 etapas_agrupadas[chave] = 0
             etapas_agrupadas[chave] += item["tempo"]
 
-        # 🔹 Exibir apenas o resumo na tela
+        # 🔹 Exibir o resumo com tempos em minutos
         resumo_text = f"Card JIRA: {jira_card}\nToken: {uuid.uuid4().hex}\n\n"
         for (etapa, codigo), tempo in etapas_agrupadas.items():
             resumo_text += f"Etapa: {etapa}\nCódigo: {codigo}\nTempo: {self.format_time(tempo)}\n\n"
@@ -522,18 +633,10 @@ class TimeTrackerApp(toga.App):
         self.current_stage = None
         self.start_time = None
         self.jira_input.value = ""
-        self.time_label.text = "Tempo total: 0 segundos"
 
         # Resetar botões (remover cores de seleção)
         for button in self.buttons.values():
             del button.style.background_color
-
-
-    def format_time(self, seconds):
-        if seconds < 60:
-            return f"{int(seconds)} segundos"
-        minutes = seconds // 60
-        return f"{int(minutes)} minutos"
 
     def save_log(self, token, jira_card, log_completo):
         """Salva os logs garantindo que o JSON seja válido."""
@@ -566,4 +669,4 @@ class TimeTrackerApp(toga.App):
 
 
 def main():
-    return TimeTrackerApp("Time Tracker", "com.viniciustorres.timetracker")
+    return TimeTrackerApp("Time Tracker v1.1", "com.viniciustorres.timetracker")
